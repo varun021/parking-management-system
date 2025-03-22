@@ -12,6 +12,9 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()  # Add this line to load environment variables from .env file
 
 from django.conf import settings
 
@@ -57,11 +60,35 @@ AUTH_USER_MODEL = 'users.User'
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # React frontend
+    "http://localhost:5173",  # Your frontend development server
+    "http://127.0.0.1:5173",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
 
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',  # Add this at the top
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -189,6 +216,9 @@ SIMPLE_JWT = {
 if DEBUG:
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
-# Razorpay settings
-RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', '')
-RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '')
+# Always use fake payments for testing
+USE_FAKE_PAYMENT_CLIENT = True
+
+# Remove or comment out Razorpay settings
+# RAZORPAY_KEY_ID = os.getenv('RAZORPAY_KEY_ID')
+# RAZORPAY_KEY_SECRET = os.getenv('RAZORPAY_KEY_SECRET')

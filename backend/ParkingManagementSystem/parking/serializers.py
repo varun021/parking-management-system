@@ -1,6 +1,7 @@
 # parking/serializers.py
 from rest_framework import serializers
 from .models import ParkingLocation, ParkingSlot, Booking, Payment, Feedback, Report
+from decimal import Decimal
 
 
 class ParkingLocationSerializer(serializers.ModelSerializer):
@@ -11,7 +12,7 @@ class ParkingLocationSerializer(serializers.ModelSerializer):
 
 class ParkingSlotSerializer(serializers.ModelSerializer):
     location_name = serializers.ReadOnlyField(source='location.name')
-
+    
     class Meta:
         model = ParkingSlot
         fields = ['id', 'location', 'location_name', 'slot_number', 'is_occupied']
@@ -19,13 +20,23 @@ class ParkingSlotSerializer(serializers.ModelSerializer):
 
 class BookingSerializer(serializers.ModelSerializer):
     user = serializers.HiddenField(default=serializers.CurrentUserDefault())
-    slot_number = serializers.ReadOnlyField(source='slot.slot_number')
-    location_name = serializers.ReadOnlyField(source='slot.location.name')
+    slot_number = serializers.SerializerMethodField()
+    location_name = serializers.SerializerMethodField()
+    total_amount = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
 
     class Meta:
         model = Booking
-        fields = ['id', 'user', 'slot', 'slot_number', 'location_name', 'start_time', 'end_time', 'amount', 'status', 'qr_code']
-        read_only_fields = ['id', 'status', 'qr_code']
+        fields = [
+            'id', 'user', 'slot', 'slot_number', 'location_name', 
+            'start_time', 'end_time', 'amount', 'total_amount', 'status', 'created_at'
+        ]
+        read_only_fields = ['id', 'status', 'created_at']
+
+    def get_slot_number(self, obj):
+        return obj.slot.slot_number if obj.slot else None
+
+    def get_location_name(self, obj):
+        return obj.slot.location.name if obj.slot else None
 
     def validate(self, attrs):
         # Check if slot is available for the requested time period
@@ -41,13 +52,22 @@ class BookingSerializer(serializers.ModelSerializer):
             slot=slot,
             status__in=['pending', 'confirmed'],
             start_time__lt=end_time,
-            end_time__gt=start_time
+            end_time__gt=start_time,
         ).exists()
 
         if existing_bookings:
             raise serializers.ValidationError({"slot": "This slot is already booked for the requested time period."})
 
         return attrs
+
+    def create(self, validated_data):
+        # Set a default amount per hour (₹50)
+        amount_per_hour = Decimal('50.00')
+        validated_data['amount'] = amount_per_hour
+        
+        # Create the booking
+        booking = Booking.objects.create(**validated_data)
+        return booking
 
 
 class PaymentSerializer(serializers.ModelSerializer):

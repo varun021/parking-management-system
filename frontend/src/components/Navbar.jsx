@@ -26,6 +26,12 @@ const Navbar = () => {
               <Link to="/spots" className="hover:text-blue-200">Parking Spots</Link>
               <Link to="/bookings" className="hover:text-blue-200">Bookings</Link>
               <Link to="/profile" className="hover:text-blue-200">Profile</Link>
+              {user?.role === 'admin' && (
+                <>
+                  <Link to="/admin" className="hover:text-blue-200">Admin Dashboard</Link>
+                  <Link to="/admin/locations" className="hover:text-blue-200">Manage Locations</Link>
+                </>
+              )}
               <button 
                 onClick={handleLogout}
                 className="bg-red-500 px-3 py-1 rounded hover:bg-red-600"

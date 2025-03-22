@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../services/api';
+import { API_ENDPOINTS } from '../services/endpoints';
 
 const ParkingSpots = () => {
   const [locations, setLocations] = useState([]);
@@ -20,7 +21,7 @@ const ParkingSpots = () => {
 
   const fetchLocations = async () => {
     try {
-      const response = await apiClient.get('/parking/locations/');
+      const response = await apiClient.get(API_ENDPOINTS.PARKING.LOCATIONS);
       setLocations(response.data);
     } catch (err) {
       setError('Failed to fetch locations');
@@ -32,7 +33,7 @@ const ParkingSpots = () => {
 
   const fetchSlots = async (locationId) => {
     try {
-      const response = await apiClient.get(`/parking/slots/?location=${locationId}`);
+      const response = await apiClient.get(`${API_ENDPOINTS.PARKING.SLOTS}?location=${locationId}`);
       setSlots(response.data);
     } catch (err) {
       setError('Failed to fetch slots');
