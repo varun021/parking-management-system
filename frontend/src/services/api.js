@@ -43,4 +43,48 @@ apiClient.interceptors.response.use(
   }
 );
 
+// Add these methods to the api client
+apiClient.verifyBookingPin = async (bookingId, pin, type) => {
+  return await apiClient.post(`/parking/bookings/${bookingId}/verify-pin/`, {
+    pin,
+    type
+  });
+};
+
+// Add this method to the api client
+apiClient.checkSlotAvailability = async (slotId, startTime, endTime) => {
+  return await apiClient.get(`/parking/slots/${slotId}/availability/`, {
+    params: {
+      start_time: startTime,
+      end_time: endTime
+    }
+  });
+};
+
+const paymentEndpoints = {
+  initiate: '/parking/payments/initiate/',
+  verify: '/parking/payments/verify/',
+  status: (paymentId) => `/parking/payments/${paymentId}/status/`,
+};
+
+export const initiatePayment = async (bookingId, paymentMethod, amount) => {
+  return await apiClient.post(paymentEndpoints.initiate, {
+    booking_id: bookingId,
+    payment_method: paymentMethod,
+    amount: amount
+  });
+};
+
+export const verifyPayment = async (paymentId, orderId, bookingId) => {
+  return await apiClient.post(paymentEndpoints.verify, {
+    payment_id: paymentId,
+    order_id: orderId,
+    booking_id: bookingId
+  });
+};
+
+export const getPaymentStatus = async (paymentId) => {
+  return await apiClient.get(paymentEndpoints.status(paymentId));
+};
+
 export default apiClient;

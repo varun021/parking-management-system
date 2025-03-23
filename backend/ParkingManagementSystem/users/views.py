@@ -9,6 +9,7 @@ from django.conf import settings
 import random
 import string
 from .serializers import UserSerializer, RegisterSerializer, OTPSerializer, OTPVerificationSerializer
+from parking.permissions import IsAdminUser  # Add this import
 
 User = get_user_model()
 
@@ -51,21 +52,42 @@ class RequestOTPView(APIView):
     permission_classes = [permissions.AllowAny]
     
     def post(self, request):
-        serializer = OTPSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        email = serializer.validated_data['email']
-        user = User.objects.get(email=email)
-        
-        # Generate new OTP and save it
-        otp = generate_otp()
-        user.otp = otp
-        user.save()
-        
-        # Send OTP via email
-        send_otp_email(email, otp)
-        
-        return Response({"message": "OTP sent successfully."}, status=status.HTTP_200_OK)
+        try:
+            serializer = OTPSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            
+            email = serializer.validated_data['email']
+            
+            try:
+                user = User.objects.get(email=email)
+                # Generate new OTP and save it
+                otp = generate_otp()
+                user.otp = otp
+                user.save()
+                
+                # Send OTP via email
+                send_otp_email(email, otp)
+                
+                return Response({"message": "OTP sent successfully."}, status=status.HTTP_200_OK)
+                
+            except User.DoesNotExist:
+                return Response(
+                    {"error": "No user found with this email."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            except User.MultipleObjectsReturned:
+                # Log this issue for admin attention
+                logger.error(f"Multiple users found with email: {email}")
+                return Response(
+                    {"error": "Account error. Please contact support."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 class VerifyOTPView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -120,3 +142,23 @@ class UpdateProfileView(generics.UpdateAPIView):
     
     def get_object(self):
         return self.request.user
+
+class AdminUserListView(generics.ListCreateAPIView):
+    permission_classes = [IsAdminUser]
+    serializer_class = UserSerializer
+    
+    def get_queryset(self):
+        queryset = User.objects.all().order_by('-date_joined')
+        role = self.request.query_params.get('role', None)
+        if role:
+            queryset = queryset.filter(role=role)
+        return queryset
+
+class AdminUserDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAdminUser]
+    serializer_class = UserSerializer
+    queryset = User.objects.all()
+
+
+
+

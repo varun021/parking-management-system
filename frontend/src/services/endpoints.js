@@ -22,8 +22,16 @@ export const API_ENDPOINTS = {
   // Admin endpoints
   ADMIN: {
     DASHBOARD: '/parking/admin/dashboard/',
-    REPORTS: '/parking/admin/reports/',
     USERS: '/parking/admin/users/',
-    SETTINGS: '/parking/admin/settings/',
+    USER_DETAILS: (id) => `/parking/admin/users/${id}/`,
+    UPDATE_USER: (id) => `/parking/admin/users/${id}/update/`,
+    DELETE_USER: (id) => `/parking/admin/users/${id}/delete/`,
+    REPORTS: {
+      OVERVIEW: '/parking/admin/reports/', // Updated path
+      REVENUE: '/parking/admin/reports/revenue/',
+      BOOKINGS: '/parking/admin/reports/bookings/',
+      USERS: '/parking/admin/reports/users/',
+      EXPORT: '/parking/admin/reports/export/',
+    }
   }
 };

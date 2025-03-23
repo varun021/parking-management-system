@@ -55,7 +55,7 @@ class BookingSerializer(serializers.ModelSerializer):
             slot=slot,
             status__in=['pending', 'confirmed'],
             start_time__lt=end_time,
-            end_time__gt=start_time
+            end_time__gt=start_time,
         ).exists()
 
         if existing_bookings:

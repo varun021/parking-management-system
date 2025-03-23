@@ -1,8 +1,13 @@
 # parking/views.py
 from django.db import models  # Add this import
 from django.contrib.auth import get_user_model  # Add this import
+import time
+from django.utils import timezone
+
+class PaymentError(Exception):
+    """Custom exception for payment-related errors."""
+    pass
 from rest_framework import viewsets, permissions, generics, status, filters
-import razorpay
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -10,6 +15,7 @@ from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError
 import qrcode
 import io
 from PIL import Image
@@ -17,8 +23,9 @@ from django.core.files.base import ContentFile
 from django.conf import settings  # Add this import
 from payments.fake_payment_client import FakePaymentClient  # Add this import
 from payments.razorpay_client import RazorpayClient  # Add this import
+from django.core.mail import send_mail
 
-from .models import ParkingLocation, ParkingSlot, Booking, Payment, Feedback, Report
+from .models import ParkingLocation, ParkingSlot, Booking, Payment, Feedback, Report, PINVerification
 from .serializers import (
     ParkingLocationSerializer, ParkingSlotSerializer, BookingSerializer,
     PaymentSerializer, FeedbackSerializer, ReportSerializer
@@ -80,6 +87,38 @@ class ParkingSlotViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(location_id=location_id, is_occupied=False)
         return queryset
 
+    @action(detail=True, methods=['get'])
+    def availability(self, request, pk=None):
+        """Check if slot is available for given time period"""
+        try:
+            slot = self.get_object()
+            start_time = request.query_params.get('start_time')
+            end_time = request.query_params.get('end_time')
+
+            if not all([start_time, end_time]):
+                raise ValidationError("Start time and end time are required")
+
+            # Convert to datetime objects
+            start_time = timezone.datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+            end_time = timezone.datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+
+            # Check for overlapping bookings
+            overlapping_bookings = Booking.objects.filter(
+                slot=slot,
+                status__in=['pending', 'confirmed', 'active'],
+                start_time__lt=end_time,
+                end_time__gt=start_time
+            ).exists()
+
+            return Response({
+                'available': not overlapping_bookings and not slot.is_occupied
+            })
+        except (ValidationError, ValueError) as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
 class BookingViewSet(viewsets.ModelViewSet):
     serializer_class = BookingSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -89,6 +128,85 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def verify_pin(self, request, pk=None):
+        booking = self.get_object()
+        pin = request.data.get('pin')
+        verification_type = request.data.get('type')  # 'entry' or 'exit'
+
+        if not pin or not verification_type:
+            return Response({
+                'error': 'PIN and verification type are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            if booking.verify_pin(pin, verification_type):
+                # Record verification
+                PINVerification.objects.create(
+                    booking=booking,
+                    verification_type=verification_type,
+                    verified_by=request.user,
+                    is_successful=True
+                )
+
+                # Send email notification
+                self.send_verification_notification(booking, verification_type)
+
+                return Response({
+                    'success': True,
+                    'message': f'PIN verification successful for {verification_type}',
+                    'booking_status': booking.status,
+                    'verified_time': (
+                        booking.entry_time if verification_type == 'entry' 
+                        else booking.exit_time
+                    ).isoformat()
+                })
+            else:
+                PINVerification.objects.create(
+                    booking=booking,
+                    verification_type=verification_type,
+                    verified_by=request.user,
+                    is_successful=False
+                )
+                return Response({
+                    'error': 'Invalid PIN'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        except ValidationError as e:
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'error': f'Verification failed: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def send_verification_notification(self, booking, verification_type):
+        """Send email notification for entry/exit verification"""
+        action_time = booking.entry_time if verification_type == 'entry' else booking.exit_time
+        
+        subject = f'Parking {verification_type.title()} Confirmed'
+        message = f"""
+            Dear {booking.user.get_full_name()},
+
+            Your parking {verification_type} has been verified successfully.
+
+            Booking Details:
+            - Location: {booking.slot.location.name}
+            - Slot: {booking.slot.slot_number}
+            - {verification_type.title()} Time: {action_time.strftime('%Y-%m-%d %H:%M:%S')}
+            
+            {'Enjoy your parking!' if verification_type == 'entry' else 'Thank you for using our service!'}
+        """
+        
+        send_mail(
+            subject,
+            message,
+            settings.EMAIL_HOST_USER,
+            [booking.user.email],
+            fail_silently=True
+        )
 
 class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.all()
@@ -110,73 +228,74 @@ class PaymentViewSet(viewsets.ModelViewSet):
     def initiate(self, request):
         try:
             booking_id = request.data.get('booking_id')
-            booking = Booking.objects.get(id=booking_id)
-            
-            # Generate a unique order ID
-            order_id = f'ORDER_{booking.id}_{timezone.now().timestamp()}'
-            
-            # Create payment object
+            booking = get_object_or_404(Booking, id=booking_id)
+            payment_method = request.data.get('payment_method')
+            amount = request.data.get('amount')
+
+            # Create payment record
             payment = Payment.objects.create(
                 booking=booking,
                 user=request.user,
-                amount=booking.total_amount or booking.amount,
+                amount=amount,
+                payment_method=payment_method,
                 status='pending',
-                payment_method=request.data.get('payment_method', 'fake_payment'),
-                order_id=order_id,
-                payment_id=f'PAYMENT_{order_id}'
+                payment_id=f'PAY_{booking.id}_{int(time.time())}',
+                order_id=f'ORDER_{booking.id}_{int(time.time())}',
+                created_at=timezone.now(),
+                updated_at=timezone.now()
             )
 
             return Response({
-                'order_id': order_id,
+                'success': True,
+                'payment_id': payment.payment_id,
+                'order_id': payment.order_id,
                 'amount': float(payment.amount),
-                'currency': 'INR',
-                'payment_details': {
-                    'duration_hours': float(booking.duration_hours),
-                    'rate_per_hour': float(booking.RATE_PER_HOUR),
-                    'calculated_amount': float(payment.amount)
-                }
+                'booking_id': booking.id
             })
-
-        except Booking.DoesNotExist:
-            return Response({'error': 'Booking not found'}, status=status.HTTP_404_NOT_FOUND)
+            
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                'error': str(e),
+                'detail': 'Payment initiation failed'
+            }, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['post'])
     def verify(self, request):
         try:
             payment_id = request.data.get('payment_id')
             order_id = request.data.get('order_id')
+            booking_id = request.data.get('booking_id')
+
+            if not all([payment_id, order_id]):
+                raise ValidationError("Missing required payment verification fields")
+
+            payment = get_object_or_404(Payment, order_id=order_id)
+            booking = get_object_or_404(Booking, id=booking_id)
             
-            # Find payment by order_id instead of payment_id for fake payments
-            payment = Payment.objects.get(order_id=order_id)
-            booking = payment.booking
+            # Add verification timestamp
+            payment.verified_at = timezone.now()
             
-            # For fake payments, always verify as true
+            # For testing/development, assume payment is successful
             payment.status = 'success'
-            payment.payment_id = payment_id
             payment.save()
-            
+
             # Update booking status
             booking.status = 'confirmed'
             booking.save()
-            
-            # Update slot status
-            if booking.slot:
-                booking.slot.is_occupied = True
-                booking.slot.save()
-            
+
             return Response({
                 'success': True,
+                'payment_id': payment.payment_id,
                 'booking_id': booking.id,
-                'payment_id': payment.payment_id
+                'amount': float(payment.amount),
+                'status': payment.status
             })
-                
-        except Payment.DoesNotExist:
+            
+        except (Payment.DoesNotExist, Booking.DoesNotExist) as e:
             return Response({
                 'success': False,
-                'error': "Payment not found for this order"
-            }, status=status.HTTP_400_BAD_REQUEST)
+                'error': str(e)
+            }, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({
                 'success': False,
@@ -342,48 +461,155 @@ class AdminDashboardView(APIView):
 class AdminReportView(APIView):
     permission_classes = [IsAdminUser]
     
-    def get(self, request):
-        report_type = request.query_params.get('type', 'daily')
-        
-        # Get date range based on report type
-        now = timezone.now()
-        if report_type == 'daily':
-            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = start_date + timezone.timedelta(days=1)
-        elif report_type == 'weekly':
-            start_date = now - timezone.timedelta(days=now.weekday())
-            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = start_date + timezone.timedelta(days=7)
-        elif report_type == 'monthly':
-            start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-            if now.month == 12:
-                end_date = now.replace(year=now.year+1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    def get(self, request, report_type=None):
+        try:
+            report_type = report_type or request.query_params.get('type', 'daily')
+            date_range = request.query_params.get('range', 'week')
+            
+            # Get date range based on report type
+            now = timezone.now()
+            if date_range == 'week':
+                start_date = now - timedelta(days=7)
+            elif date_range == 'month':
+                start_date = now - timedelta(days=30)
+            elif date_range == 'year':
+                start_date = now - timedelta(days=365)
             else:
-                end_date = now.replace(month=now.month+1, day=1, hour=0, minute=0, second=0, microsecond=0)
-        else:
-            return Response({"error": "Invalid report type."}, status=status.HTTP_400_BAD_REQUEST)
+                start_date = now - timedelta(days=7)  # Default to week
+            
+            # Get data based on report type
+            if report_type == 'overview':
+                data = self.get_overview_data(start_date)
+            elif report_type == 'revenue':
+                data = self.get_revenue_data(start_date)
+            elif report_type == 'bookings':
+                data = self.get_bookings_data(start_date)
+            elif report_type == 'users':
+                data = self.get_users_data(start_date)
+            else:
+                return Response({"error": "Invalid report type."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(data)
+            
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def get_overview_data(self, start_date):
+        """Get overview report data"""
+        now = timezone.now()
         
-        # Get bookings within date range
-        bookings = Booking.objects.filter(start_time__gte=start_date, start_time__lt=end_date)
-        total_bookings = bookings.count()
-        
-        # Get revenue
-        payments = Payment.objects.filter(booking__in=bookings, status='success')
-        total_revenue = payments.aggregate(total=models.Sum('amount'))['total'] or 0
-        
-        # Create report
-        report = Report.objects.create(
-            admin=request.user,
-            report_type=report_type,
-            total_bookings=total_bookings,
-            total_revenue=total_revenue
+        # Get bookings data
+        bookings = Booking.objects.filter(created_at__gte=start_date)
+        bookings_data = (
+            bookings.annotate(date=models.functions.TruncDate('created_at'))
+            .values('date')
+            .annotate(count=Count('id'))
+            .order_by('date')
         )
         
-        # Return report data
-        return Response({
-            "report_id": report.id,
-            "report_type": report_type,
-            "total_bookings": total_bookings,
-            "total_revenue": total_revenue,
-            "generated_at": report.generated_at
-        })
+        # Get revenue data
+        revenue_data = (
+            Payment.objects.filter(
+                created_at__gte=start_date,
+                status='success'
+            )
+            .annotate(date=models.functions.TruncDate('created_at'))
+            .values('date')
+            .annotate(amount=Sum('amount'))
+            .order_by('date')
+        )
+        
+        return {
+            'bookings': list(bookings_data),
+            'revenue': list(revenue_data),
+            'summary': {
+                'total_bookings': bookings.count(),
+                'total_revenue': Payment.objects.filter(
+                    created_at__gte=start_date,
+                    status='success'
+                ).aggregate(total=Sum('amount'))['total'] or 0,
+            }
+        }
+
+    def get_revenue_data(self, start_date):
+        """Get revenue report data"""
+        revenue_data = (
+            Payment.objects.filter(
+                created_at__gte=start_date,
+                status='success'
+            )
+            .annotate(date=models.functions.TruncDate('created_at'))
+            .values('date')
+            .annotate(
+                total=Sum('amount'),
+                count=Count('id')
+            )
+            .order_by('date')
+        )
+        
+        return {
+            'revenue_by_date': list(revenue_data),
+            'payment_methods': list(
+                Payment.objects.filter(
+                    created_at__gte=start_date,
+                    status='success'
+                )
+                .values('payment_method')
+                .annotate(
+                    total=Sum('amount'),
+                    count=Count('id')
+                )
+            )
+        }
+
+    def get_bookings_data(self, start_date):
+        """Get bookings report data"""
+        bookings_data = (
+            Booking.objects.filter(created_at__gte=start_date)
+            .annotate(date=models.functions.TruncDate('created_at'))
+            .values('date')
+            .annotate(
+                count=Count('id'),
+                revenue=Sum('amount')
+            )
+            .order_by('date')
+        )
+        
+        return {
+            'bookings_by_date': list(bookings_data),
+            'status_distribution': list(
+                Booking.objects.filter(created_at__gte=start_date)
+                .values('status')
+                .annotate(count=Count('id'))
+            )
+        }
+
+    def get_users_data(self, start_date):
+        """Get users report data"""
+        User = get_user_model()
+        
+        return {
+            'new_users': list(
+                User.objects.filter(date_joined__gte=start_date)
+                .annotate(date=models.functions.TruncDate('date_joined'))
+                .values('date')
+                .annotate(count=Count('id'))
+                .order_by('date')
+            ),
+            'role_distribution': list(
+                User.objects.values('role')
+                .annotate(count=Count('id'))
+            ),
+            'booking_distribution': list(
+                Booking.objects.filter(created_at__gte=start_date)
+                .values('user__username')
+                .annotate(
+                    booking_count=Count('id'),
+                    total_spent=Sum('amount')
+                )
+                .order_by('-booking_count')[:10]
+            )
+        }

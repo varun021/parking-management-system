@@ -26,6 +26,7 @@ class User(AbstractUser):
         help_text='Specific permissions for this user.'
     )
     
+    email = models.EmailField(unique=True)  # Add this line or modify existing email field
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='customer')
     phone = models.CharField(max_length=15, unique=True, null=True, blank=True)
     otp = models.CharField(max_length=6, null=True, blank=True)  # OTP for Login

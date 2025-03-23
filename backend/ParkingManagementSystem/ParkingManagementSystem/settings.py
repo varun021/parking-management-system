@@ -204,13 +204,12 @@ SIMPLE_JWT = {
 }
 
 # Email settings for sending OTP
-# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-# EMAIL_HOST = 'smtp.gmail.com'  # Change according to your email provider
-# EMAIL_PORT = 587
-# EMAIL_USE_TLS = True
-# EMAIL_HOST_USER = 'your-email@gmail.com'  # Add your email
-# EMAIL_HOST_PASSWORD = 'your-app-password'  # Add your email app password
-
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # For development
+EMAIL_HOST = 'smtp.gmail.com'  # Change according to your email provider
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'your-email@gmail.com'  # Add your email
+EMAIL_HOST_PASSWORD = 'your-app-password'  # Add your email app password
 
 # For development/testing, you can use the console backend instead:
 if DEBUG:

@@ -21,4 +21,6 @@ urlpatterns = [
     path('payments/initiate/', PaymentViewSet.as_view({'post': 'initiate'}), name='initiate-payment'),
     path('payments/verify/', PaymentViewSet.as_view({'post': 'verify'}), name='verify-payment'),
     path('payments/<int:pk>/refund/', PaymentViewSet.as_view({'post': 'refund'}), name='refund-payment'),
+    path('bookings/<int:pk>/verify-pin/', BookingViewSet.as_view({'post': 'verify_pin'}), name='verify-pin'),
+    path('admin/reports/<str:report_type>/', AdminReportView.as_view(), name='admin-reports-type'),
 ]
