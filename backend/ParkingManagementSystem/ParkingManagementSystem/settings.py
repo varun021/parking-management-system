@@ -31,7 +31,9 @@ SECRET_KEY = 'django-insecure-y#(ozw^4*8qu-rm13hpv=wf&f7u1hj0u8lg-k+sh!iupb+^j(%
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+#ALLOWED_HOSTS = []
+
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -58,11 +60,13 @@ INSTALLED_APPS = [
 # Add this after INSTALLED_APPS
 AUTH_USER_MODEL = 'users.User'
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # React frontend
-    "http://localhost:5173",  # Your frontend development server
-    "http://127.0.0.1:5173",
-]
+# CORS_ALLOWED_ORIGINS = [
+#     "http://localhost:3000",  # React frontend
+#     "http://localhost:5173",  # Your frontend development server
+#     "http://127.0.0.1:5173",
+# ]
+
+CORS_ALLOW_ALL_ORIGINS = True
 
 CORS_ALLOW_CREDENTIALS = True
 

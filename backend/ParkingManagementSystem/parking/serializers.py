@@ -2,7 +2,7 @@
 from rest_framework import serializers
 from django.core.mail import send_mail
 from django.conf import settings
-from .models import ParkingLocation, ParkingSlot, Booking, Payment, Feedback, Report
+from .models import ParkingLocation, ParkingSlot, Booking, Payment, Feedback, Report, Subscription
 from decimal import Decimal
 
 
@@ -124,3 +124,21 @@ class ReportSerializer(serializers.ModelSerializer):
         model = Report
         fields = ['id', 'admin', 'admin_username', 'generated_at', 'report_type', 'total_bookings', 'total_revenue']
         read_only_fields = ['id', 'generated_at']
+
+
+class SubscriptionSerializer(serializers.ModelSerializer):
+    user = serializers.HiddenField(default=serializers.CurrentUserDefault())
+    username = serializers.ReadOnlyField(source='user.username')
+    location_name = serializers.ReadOnlyField(source='location.name')
+    slot_number = serializers.ReadOnlyField(source='slot.slot_number')
+    end_date = serializers.DateField(read_only=True)
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = Subscription
+        fields = [
+            'id', 'user', 'username', 'location', 'location_name', 
+            'slot', 'slot_number', 'duration', 'start_date', 
+            'end_date', 'amount', 'status', 'created_at'
+        ]
+        read_only_fields = ['id', 'status', 'created_at', 'end_date', 'amount']

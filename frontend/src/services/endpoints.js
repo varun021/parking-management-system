@@ -13,10 +13,13 @@ export const API_ENDPOINTS = {
   // Parking endpoints
   PARKING: {
     LOCATIONS: '/parking/locations/',
-    SLOTS: '/parking/slots/',
+    SLOTS: '/parking/slots/',  // Changed from /parking-slots/
     BOOKINGS: '/parking/bookings/',
     PAYMENTS: '/parking/payments/',
     FEEDBACKS: '/parking/feedbacks/',
+    SUBSCRIPTIONS: '/parking/subscriptions/',
+    SUBSCRIPTION_DETAILS: (id) => `/parking/subscriptions/${id}/`,
+    CANCEL_SUBSCRIPTION: (id) => `/parking/subscriptions/${id}/cancel/`,
   },
 
   // Admin endpoints
@@ -32,6 +35,8 @@ export const API_ENDPOINTS = {
       BOOKINGS: '/parking/admin/reports/bookings/',
       USERS: '/parking/admin/reports/users/',
       EXPORT: '/parking/admin/reports/export/',
-    }
+    },
+    SLOTS: '/parking/admin/slots/',
+    SLOT_DETAILS: (id) => `/parking/admin/slots/${id}/`,
   }
 };

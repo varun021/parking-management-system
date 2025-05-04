@@ -25,10 +25,10 @@ from payments.fake_payment_client import FakePaymentClient  # Add this import
 from payments.razorpay_client import RazorpayClient  # Add this import
 from django.core.mail import send_mail
 
-from .models import ParkingLocation, ParkingSlot, Booking, Payment, Feedback, Report, PINVerification
+from .models import ParkingLocation, ParkingSlot, Booking, Payment, Feedback, Report, PINVerification, Subscription
 from .serializers import (
     ParkingLocationSerializer, ParkingSlotSerializer, BookingSerializer,
-    PaymentSerializer, FeedbackSerializer, ReportSerializer
+    PaymentSerializer, FeedbackSerializer, ReportSerializer, SubscriptionSerializer
 )
 from .permissions import IsAdminUser
 
@@ -613,3 +613,65 @@ class AdminReportView(APIView):
                 .order_by('-booking_count')[:10]
             )
         }
+
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
+from rest_framework import viewsets, permissions, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from .models import Subscription
+from .serializers import SubscriptionSerializer
+
+class SubscriptionViewSet(viewsets.ModelViewSet):
+    serializer_class = SubscriptionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_staff:
+            return Subscription.objects.all()
+        return Subscription.objects.filter(user=user)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Get start date from request or use current date
+        start_date = serializer.validated_data.get('start_date', datetime.now().date())
+        duration = serializer.validated_data['duration']
+        
+        # Calculate end date and amount based on duration
+        if duration == 'monthly':
+            # Add 28 days for monthly subscription
+            end_date = start_date + timedelta(days=28)
+            amount = 1000  # Monthly rate
+        else:  # yearly
+            # Add 12 months for yearly subscription
+            end_date = start_date + relativedelta(months=12)
+            amount = 10000  # Yearly rate
+        
+        # Save subscription with calculated fields
+        subscription = serializer.save(
+            user=request.user,
+            end_date=end_date,
+            amount=amount,
+            status='active'
+        )
+        
+        return Response(
+            self.get_serializer(subscription).data,
+            status=status.HTTP_201_CREATED
+        )
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        subscription = self.get_object()
+        if subscription.status != 'active':
+            return Response(
+                {"error": "Only active subscriptions can be cancelled."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        subscription.status = 'cancelled'
+        subscription.save()
+        return Response({"message": "Subscription cancelled successfully."})

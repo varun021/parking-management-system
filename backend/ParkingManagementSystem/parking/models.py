@@ -219,3 +219,29 @@ class Report(models.Model):
 
     def __str__(self):
         return f"{self.report_type} Report - {self.generated_at}"
+
+
+class Subscription(models.Model):
+    DURATION_CHOICES = (
+        ('monthly', 'Monthly'),
+        ('yearly', 'Yearly'),
+    )
+    STATUS_CHOICES = (
+        ('active', 'Active'),
+        ('expired', 'Expired'),
+        ('cancelled', 'Cancelled'),
+    )
+    
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='subscriptions')
+    location = models.ForeignKey(ParkingLocation, on_delete=models.CASCADE)
+    slot = models.ForeignKey(ParkingSlot, on_delete=models.CASCADE)
+    duration = models.CharField(max_length=10, choices=DURATION_CHOICES)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username}'s {self.duration} subscription"

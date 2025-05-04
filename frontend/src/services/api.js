@@ -1,13 +1,22 @@
 import axios from 'axios';
 import { API_ENDPOINTS } from './endpoints';
 
+// const apiClient = axios.create({
+//   baseURL: 'http://localhost:8000',
+//   headers: { 
+//     'Content-Type': 'application/json',
+//     'Accept': 'application/json'
+//   }
+// });
+
 const apiClient = axios.create({
-  baseURL: 'http://localhost:8000',
+  baseURL: window.location.hostname === 'localhost' ? 'http://localhost:8000' : `http://${window.location.hostname}:8000`,
   headers: { 
     'Content-Type': 'application/json',
     'Accept': 'application/json'
   }
 });
+
 
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('accessToken');

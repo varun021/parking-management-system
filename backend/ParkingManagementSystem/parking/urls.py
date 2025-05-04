@@ -4,7 +4,8 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     ParkingLocationViewSet, ParkingSlotViewSet, BookingViewSet,
-    PaymentViewSet, FeedbackViewSet, AdminDashboardView, AdminReportView
+    PaymentViewSet, FeedbackViewSet, AdminDashboardView, AdminReportView,
+    SubscriptionViewSet
 )
 
 router = DefaultRouter()
@@ -13,6 +14,7 @@ router.register('slots', ParkingSlotViewSet)
 router.register('bookings', BookingViewSet, basename='booking')
 router.register('payments', PaymentViewSet)
 router.register('feedbacks', FeedbackViewSet)
+router.register('subscriptions', SubscriptionViewSet, basename='subscription')
 
 urlpatterns = [
     path('', include(router.urls)),

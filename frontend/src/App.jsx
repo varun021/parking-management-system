@@ -20,6 +20,8 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import LocationManager from './pages/admin/LocationManager';
 import UserManagement from './pages/admin/UserManagement';
 import Reports from './pages/admin/Reports';
+import SlotManagement from '../src/components/SlotManagement';
+import Subscription from './components/Subscription';
 
 // Import shared components
 import Navbar from './components/Navbar';
@@ -52,12 +54,14 @@ function AppContent() {
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/spots" element={<ProtectedRoute><ParkingSpots /></ProtectedRoute>} />
             <Route path="/bookings" element={<ProtectedRoute><Bookings /></ProtectedRoute>} />
+            <Route path="/subscriptions" element={<ProtectedRoute><Subscription /></ProtectedRoute>} />
             
             {/* Admin routes */}
             <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
             <Route path="/admin/locations" element={<AdminRoute><LocationManager /></AdminRoute>} />
             <Route path="/admin/users" element={<AdminRoute><UserManagement /></AdminRoute>} />
             <Route path="/admin/reports" element={<AdminRoute><Reports /></AdminRoute>} />
+            <Route path="/slots" element={<AdminRoute><SlotManagement /></AdminRoute>} />
             
             {/* 404 route */}
             <Route path="*" element={<NotFound />} />
